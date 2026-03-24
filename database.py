@@ -1,8 +1,8 @@
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker, declarative_base
-import urllib
-
+import urllib.parse
 import os
+import sys
 
 # Connect to the local SQL Server using Windows Authentication.
 # The server name is usually "localhost" or a named instance like "localhost\SQLEXPRESS".
@@ -18,14 +18,28 @@ local_url = f"mssql+pyodbc:///?odbc_connect={urllib.parse.quote_plus(odbc_str)}"
 db_url = os.getenv("DATABASE_URL")
 
 if db_url:
+    print("DEBUG: Using DATABASE_URL from environment.")
     # Fix Render issue where they provide 'postgres://' instead of 'postgresql://'
     if db_url.startswith("postgres://"):
         db_url = db_url.replace("postgres://", "postgresql://", 1)
 else:
-    # Fallback to local SQL server if no environment variable is set
+    print("DEBUG: DATABASE_URL not found. Falling back to local URL.")
+    # On Linux (Render), pyodbc/mssql will fail. We should warn.
+    if sys.platform != "win32":
+        print("WARNING: Running on non-Windows platform without DATABASE_URL. Connection will likely fail.")
     db_url = local_url
 
-engine = create_engine(db_url, echo=False)
+try:
+    engine = create_engine(db_url, echo=False)
+    # Verification of connection
+    with engine.connect() as conn:
+        print("DEBUG: Database connection successful.")
+except Exception as e:
+    print(f"CRITICAL ERROR: Could not connect to database: {e}")
+    # In production, we want to see this error clearly in Render logs.
+    if os.getenv("RENDER"):
+        sys.exit(1)
+
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 Base = declarative_base()
 

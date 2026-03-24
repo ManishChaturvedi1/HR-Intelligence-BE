@@ -17,7 +17,6 @@ from database import engine, get_db
 from auth import get_current_user
 
 # ── App setup ─────────────────────────────────────────────────
-models.Base.metadata.create_all(bind=engine)
 app = FastAPI(title="Employee Attrition API")
 
 app.add_middleware(
@@ -27,17 +26,35 @@ app.add_middleware(
 )
 
 # ── Model load ────────────────────────────────────────────────
-MODEL_PATH = os.path.join(os.path.dirname(__file__), "..", "model.pkl")
+# Look for model.pkl in the current directory (new repo) or one level up (old repo)
+MODEL_PATH = os.path.join(os.path.dirname(__file__), "model.pkl")
+if not os.path.exists(MODEL_PATH):
+    MODEL_PATH = os.path.join(os.path.dirname(__file__), "..", "model.pkl")
 model = None
 
 @app.on_event("startup")
-def load_model():
+def on_startup():
+    # 1. Initialize Database
+    print("DEBUG: Initializing database tables...")
+    try:
+        models.Base.metadata.create_all(bind=engine)
+        print("DEBUG: Database initialization complete.")
+    except Exception as e:
+        print(f"CRITICAL ERROR: Database initialization failed: {e}")
+        # On Render, we want to fail fast so we can see the log
+        if os.getenv("RENDER"):
+            os._exit(1)
+
+    # 2. Load ML Model
     global model
     if os.path.exists(MODEL_PATH):
-        model = joblib.load(MODEL_PATH)
-        print("Model loaded.")
+        try:
+            model = joblib.load(MODEL_PATH)
+            print(f"DEBUG: Model loaded successfully from {MODEL_PATH}")
+        except Exception as e:
+            print(f"ERROR: Failed to load model: {e}")
     else:
-        print(f"Warning: model not found at {MODEL_PATH}")
+        print(f"WARNING: model not found at {MODEL_PATH}")
 
 # ══════════════════════════════════════════════════════════════
 # PUBLIC ROUTES — no auth needed
