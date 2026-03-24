@@ -16,14 +16,7 @@ import schemas
 from database import engine, get_db
 from auth import get_current_user
 
-# ── App setup ─────────────────────────────────────────────────
-app = FastAPI(title="Employee Attrition API", lifespan=lifespan)
-
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"], allow_credentials=True,
-    allow_methods=["*"], allow_headers=["*"],
-)
+from contextlib import asynccontextmanager
 
 # ── Model load ────────────────────────────────────────────────
 # Look for model.pkl in the current directory (new repo) or one level up (old repo)
@@ -31,8 +24,6 @@ MODEL_PATH = os.path.join(os.path.dirname(__file__), "model.pkl")
 if not os.path.exists(MODEL_PATH):
     MODEL_PATH = os.path.join(os.path.dirname(__file__), "..", "model.pkl")
 model = None
-
-from contextlib import asynccontextmanager
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -58,8 +49,16 @@ async def lifespan(app: FastAPI):
         print(f"WARNING: model not found at {MODEL_PATH}")
 
     yield  # Hand off to the running application
-
     # ── SHUTDOWN ── (nothing to do)
+
+# ── App setup ─────────────────────────────────────────────────
+app = FastAPI(title="Employee Attrition API", lifespan=lifespan)
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"], allow_credentials=True,
+    allow_methods=["*"], allow_headers=["*"],
+)
 
 
 # ══════════════════════════════════════════════════════════════
