@@ -14,10 +14,7 @@ load_dotenv()
 import models
 import schemas
 from database import engine, get_db
-from auth import (
-    hash_password, verify_password,
-    create_access_token, get_current_user,
-)
+from auth import get_current_user
 
 # ── App setup ─────────────────────────────────────────────────
 models.Base.metadata.create_all(bind=engine)
@@ -51,56 +48,11 @@ def root():
     return {"message": "Employee Attrition API"}
 
 
-@app.post("/auth/register", response_model=schemas.AuthResponse, status_code=201)
-def register(payload: schemas.RegisterRequest, db: Session = Depends(get_db)):
-    # Check slug is unique
-    if db.query(models.Organization).filter(models.Organization.slug == payload.org_slug).first():
-        raise HTTPException(status_code=400, detail="Organisation slug already taken.")
-    # Check email is unique
-    if db.query(models.User).filter(models.User.email == payload.email).first():
-        raise HTTPException(status_code=400, detail="Email already registered.")
-
-    org  = models.Organization(name=payload.org_name, slug=payload.org_slug)
-    db.add(org); db.flush()  # flush to get org.id
-
-    user = models.User(
-        organization_id=org.id,
-        name=payload.name,
-        email=payload.email,
-        hashed_password=hash_password(payload.password),
-        role="admin",
-    )
-    db.add(user); db.commit(); db.refresh(user)
-
-    token = create_access_token({"sub": user.email, "org_id": org.id, "role": user.role})
-    return {"access_token": token, "token_type": "bearer",
-            "user": {"id": user.id, "name": user.name, "email": user.email,
-                     "role": user.role, "org_name": org.name, "org_slug": org.slug}}
-
-
-@app.post("/auth/login", response_model=schemas.AuthResponse)
-def login(form: schemas.LoginRequest, db: Session = Depends(get_db)):
-    user = db.query(models.User).filter(models.User.email == form.email).first()
-    if not user or not verify_password(form.password, user.hashed_password):
-        raise HTTPException(status_code=401, detail="Invalid email or password.")
-    org = db.query(models.Organization).filter(models.Organization.id == user.organization_id).first()
-    token = create_access_token({"sub": user.email, "org_id": user.organization_id, "role": user.role})
-    return {"access_token": token, "token_type": "bearer",
-            "user": {"id": user.id, "name": user.name, "email": user.email,
-                     "role": user.role, "org_name": org.name if org else "", "org_slug": org.slug if org else ""}}
-
-
-@app.get("/auth/me", response_model=schemas.UserOut)
-def me(current_user: models.User = Depends(get_current_user), db: Session = Depends(get_db)):
-    org = db.query(models.Organization).filter(models.Organization.id == current_user.organization_id).first()
-    return {"id": current_user.id, "name": current_user.name, "email": current_user.email,
-            "role": current_user.role, "org_name": org.name if org else "", "org_slug": org.slug if org else ""}
-
-
 import json
+import itertools
 
 def generate_reasons(emp, risk: bool, prob: float) -> str:
-    factors = []
+    factors: list[dict[str, str]] = []
     
     # Negative factors
     if emp.overtime: factors.append({"metric": "Overtime", "impact": "negative", "desc": "Working overtime increases burnout risk"})
@@ -121,11 +73,11 @@ def generate_reasons(emp, risk: bool, prob: float) -> str:
     if risk:
         factors.sort(key=lambda x: 0 if x["impact"] == "negative" else 1)
         # Keep only the top 4 negative factors if risk is high
-        factors = [f for f in factors if f["impact"] == "negative"][:4]
+        factors = list(itertools.islice((f for f in factors if f["impact"] == "negative"), 4))
     else:
         factors.sort(key=lambda x: 0 if x["impact"] == "positive" else 1)
         # Keep only the top 4 positive factors if risk is low
-        factors = [f for f in factors if f["impact"] == "positive"][:4]
+        factors = list(itertools.islice((f for f in factors if f["impact"] == "positive"), 4))
         
     return json.dumps(factors)
 # ══════════════════════════════════════════════════════════════
@@ -142,7 +94,10 @@ def predict_attrition(
         raise HTTPException(status_code=500, detail="Model is not loaded.")
 
     if employee_data.email:
-        existing = db.query(models.Employee).filter(models.Employee.email == employee_data.email).first()
+        existing = db.query(models.Employee).filter(
+            models.Employee.email == employee_data.email,
+            models.Employee.organization_id == current_user.organization_id
+        ).first()
         if existing:
             raise HTTPException(status_code=400, detail="An employee with this email already exists.")
 
@@ -255,7 +210,10 @@ async def predict_bulk(
 
             email = str(row.get("email", "")).strip() or None
             if email:
-                existing = db.query(models.Employee).filter(models.Employee.email == email).first()
+                existing = db.query(models.Employee).filter(
+                    models.Employee.email == email,
+                    models.Employee.organization_id == current_user.organization_id
+                ).first()
                 if existing:
                     raise Exception(f"Employee with email {email} already exists.")
 
@@ -306,7 +264,7 @@ async def predict_bulk(
                 "department": db_emp.department,
                 "job_role": db_emp.job_role,
                 "attrition_risk": risk,
-                "probability": round(prob * 100, 1),
+                "probability": round(float(prob * 100), 1),
                 "reasons": reasons,
             })
         except Exception as e:
@@ -361,44 +319,52 @@ def get_stats(
                 "departments": [], "genders": [], "age_groups": [], "satisfaction": [],
                 "overtime": [], "roles": [], "scatter": []}
 
-    high_risk = 0
-    dept_counts  = {}
-    gender_counts= {}
-    age_groups   = {"18-25": 0, "26-35": 0, "36-45": 0, "46-55": 0, "56+": 0}
-    satisfaction_counts = {1: {"Low": 0, "High": 0}, 2: {"Low": 0, "High": 0},
+    high_risk: int = 0
+    dept_counts: dict[str, int] = {}
+    gender_counts: dict[str, int] = {}
+    age_groups: dict[str, int] = {"18-25": 0, "26-35": 0, "36-45": 0, "46-55": 0, "56+": 0}
+    satisfaction_counts: dict[int, dict[str, int]] = {1: {"Low": 0, "High": 0}, 2: {"Low": 0, "High": 0},
                            3: {"Low": 0, "High": 0}, 4: {"Low": 0, "High": 0}}
-    overtime_risk = {"Yes": {"High Risk": 0, "Low Risk": 0}, "No": {"High Risk": 0, "Low Risk": 0}}
-    role_counts  = {}
+    overtime_risk: dict[str, dict[str, int]] = {"Yes": {"High Risk": 0, "Low Risk": 0}, "No": {"High Risk": 0, "Low Risk": 0}}
+    role_counts: dict[str, int] = {}
     scatter_data = []
 
     for e in employees:
-        risk = e.predictions[-1].attrition_risk if e.predictions else False
-        if risk: high_risk += 1
+        try:
+            risk = bool(e.predictions[-1].attrition_risk) if e.predictions else False
+        except Exception:
+            risk = False
+        if risk: 
+            high_risk = int(high_risk + 1)
 
-        dept_counts[e.department]  = dept_counts.get(e.department, 0) + 1
-        gender_counts[e.gender]    = gender_counts.get(e.gender, 0) + 1
-        role_counts[e.job_role]    = role_counts.get(e.job_role, 0) + 1
+        dept_key, gender_key, role_key = str(e.department), str(e.gender), str(e.job_role)
+        if dept_key not in dept_counts: dept_counts[dept_key] = 0
+        dept_counts[dept_key] = int(dept_counts[dept_key]) + 1
+        if gender_key not in gender_counts: gender_counts[gender_key] = 0
+        gender_counts[gender_key] = int(gender_counts[gender_key]) + 1
+        if role_key not in role_counts: role_counts[role_key] = 0
+        role_counts[role_key] = int(role_counts[role_key]) + 1
 
-        if e.age <= 25:   age_groups["18-25"] += 1
-        elif e.age <= 35: age_groups["26-35"] += 1
-        elif e.age <= 45: age_groups["36-45"] += 1
-        elif e.age <= 55: age_groups["46-55"] += 1
-        else:             age_groups["56+"] += 1
+        if e.age <= 25:   age_groups["18-25"] = int(age_groups["18-25"]) + 1
+        elif e.age <= 35: age_groups["26-35"] = int(age_groups["26-35"]) + 1
+        elif e.age <= 45: age_groups["36-45"] = int(age_groups["36-45"]) + 1
+        elif e.age <= 55: age_groups["46-55"] = int(age_groups["46-55"]) + 1
+        else:             age_groups["56+"]   = int(age_groups["56+"]) + 1
 
         sat_key = e.job_satisfaction if e.job_satisfaction in satisfaction_counts else 3
-        if risk: satisfaction_counts[sat_key]["High"] += 1
-        else:    satisfaction_counts[sat_key]["Low"]  += 1
+        if risk: satisfaction_counts[sat_key]["High"] = int(satisfaction_counts[sat_key]["High"]) + 1
+        else:    satisfaction_counts[sat_key]["Low"]  = int(satisfaction_counts[sat_key]["Low"]) + 1
 
         ot_key = "Yes" if e.overtime else "No"
-        if risk: overtime_risk[ot_key]["High Risk"] += 1
-        else:    overtime_risk[ot_key]["Low Risk"]  += 1
+        if risk: overtime_risk[ot_key]["High Risk"] = int(overtime_risk[ot_key]["High Risk"]) + 1
+        else:    overtime_risk[ot_key]["Low Risk"]  = int(overtime_risk[ot_key]["Low Risk"]) + 1
 
         scatter_data.append({"salary": e.salary, "tenure": e.years_at_company, "risk": 1 if risk else 0})
 
     return {
         "total_employees":  total,
         "high_risk_count":  high_risk,
-        "high_risk_percent": round((high_risk / total) * 100, 1),
+        "high_risk_percent": round(float((high_risk / total) * 100), 1),
         "departments":   [{"name": k, "value": v} for k, v in dept_counts.items()],
         "genders":       [{"name": k, "value": v} for k, v in gender_counts.items()],
         "age_groups":    [{"name": k, "value": v} for k, v in age_groups.items()],
