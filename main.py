@@ -17,7 +17,7 @@ from database import engine, get_db
 from auth import get_current_user
 
 # ── App setup ─────────────────────────────────────────────────
-app = FastAPI(title="Employee Attrition API")
+app = FastAPI(title="Employee Attrition API", lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,
@@ -32,8 +32,11 @@ if not os.path.exists(MODEL_PATH):
     MODEL_PATH = os.path.join(os.path.dirname(__file__), "..", "model.pkl")
 model = None
 
-@app.on_event("startup")
-def on_startup():
+from contextlib import asynccontextmanager
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # ── STARTUP ──
     # 1. Initialize Database
     print("DEBUG: Initializing database tables...")
     try:
@@ -41,9 +44,7 @@ def on_startup():
         print("DEBUG: Database initialization complete.")
     except Exception as e:
         print(f"CRITICAL ERROR: Database initialization failed: {e}")
-        # On Render, we want to fail fast so we can see the log
-        if os.getenv("RENDER"):
-            print("WARNING: Database initialization failed, but continuing startup to allow port binding.")
+        print("WARNING: Continuing startup to allow port binding...")
 
     # 2. Load ML Model
     global model
@@ -55,6 +56,11 @@ def on_startup():
             print(f"ERROR: Failed to load model: {e}")
     else:
         print(f"WARNING: model not found at {MODEL_PATH}")
+
+    yield  # Hand off to the running application
+
+    # ── SHUTDOWN ── (nothing to do)
+
 
 # ══════════════════════════════════════════════════════════════
 # PUBLIC ROUTES — no auth needed

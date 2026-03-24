@@ -29,7 +29,16 @@ else:
         print("WARNING: Running on non-Windows platform without DATABASE_URL. Connection will likely fail.")
     db_url = local_url
 
-engine = create_engine(db_url, echo=False)
+if db_url and db_url.startswith("postgresql"):
+    # Add connection timeout to prevent startup hang
+    engine = create_engine(
+        db_url,
+        echo=False,
+        pool_pre_ping=True,
+        connect_args={"connect_timeout": 10},
+    )
+else:
+    engine = create_engine(db_url, echo=False)
 
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 Base = declarative_base()
