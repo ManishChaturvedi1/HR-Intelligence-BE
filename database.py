@@ -2,15 +2,20 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker, declarative_base
 import urllib
 
+import os
+
 # Connect to the local SQL Server using Windows Authentication.
 # The server name is usually "localhost" or a named instance like "localhost\SQLEXPRESS".
-SERVER = "ALOK-PC\\SQLEXPRESS"
-DATABASE = "EmpAttrition"
+SERVER = os.getenv("DB_SERVER", "ALOK-PC\\SQLEXPRESS")
+DATABASE = os.getenv("DB_NAME", "EmpAttrition")
 DRIVER = "ODBC Driver 17 for SQL Server"
 
 # Construct ODBC connection string
 odbc_str = f"DRIVER={{{DRIVER}}};SERVER={SERVER};DATABASE={DATABASE};Trusted_Connection=yes;"
-db_url = f"mssql+pyodbc:///?odbc_connect={urllib.parse.quote_plus(odbc_str)}"
+local_url = f"mssql+pyodbc:///?odbc_connect={urllib.parse.quote_plus(odbc_str)}"
+
+# Use DATABASE_URL from .env if provided (e.g., matching a deployed PostgreSQL/MySQL instance)
+db_url = os.getenv("DATABASE_URL", local_url)
 
 engine = create_engine(db_url, echo=False)
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
