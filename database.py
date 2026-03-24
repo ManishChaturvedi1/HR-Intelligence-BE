@@ -1,6 +1,7 @@
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker, declarative_base
 from dotenv import load_dotenv
+import urllib.parse
 import os
 
 # Load environment variables from .env
@@ -13,9 +14,13 @@ DB_HOST = os.getenv("host")
 DB_PORT = os.getenv("port", "6543")
 DB_NAME = os.getenv("dbname")
 
+# URL-encode credentials so special chars like @, %, # don't break the URL
+_user = urllib.parse.quote_plus(DB_USER or "")
+_password = urllib.parse.quote_plus(DB_PASSWORD or "")
+
 # Build SQLAlchemy connection URL
 DATABASE_URL = (
-    f"postgresql+psycopg2://{DB_USER}:{DB_PASSWORD}"
+    f"postgresql+psycopg2://{_user}:{_password}"
     f"@{DB_HOST}:{DB_PORT}/{DB_NAME}?sslmode=require"
 )
 
