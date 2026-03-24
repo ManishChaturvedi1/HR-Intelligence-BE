@@ -15,7 +15,15 @@ odbc_str = f"DRIVER={{{DRIVER}}};SERVER={SERVER};DATABASE={DATABASE};Trusted_Con
 local_url = f"mssql+pyodbc:///?odbc_connect={urllib.parse.quote_plus(odbc_str)}"
 
 # Use DATABASE_URL from .env if provided (e.g., matching a deployed PostgreSQL/MySQL instance)
-db_url = os.getenv("DATABASE_URL", local_url)
+db_url = os.getenv("DATABASE_URL")
+
+if db_url:
+    # Fix Render issue where they provide 'postgres://' instead of 'postgresql://'
+    if db_url.startswith("postgres://"):
+        db_url = db_url.replace("postgres://", "postgresql://", 1)
+else:
+    # Fallback to local SQL server if no environment variable is set
+    db_url = local_url
 
 engine = create_engine(db_url, echo=False)
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
