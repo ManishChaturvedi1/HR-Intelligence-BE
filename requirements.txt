@@ -8,3 +8,5 @@ joblib
 pydantic
 python-jose[cryptography]
 httpx
+python-dotenv
+psycopg2-binary
