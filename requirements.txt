@@ -10,3 +10,4 @@ python-jose[cryptography]
 httpx
 python-dotenv
 psycopg2-binary
+python-multipart
