@@ -29,16 +29,7 @@ else:
         print("WARNING: Running on non-Windows platform without DATABASE_URL. Connection will likely fail.")
     db_url = local_url
 
-try:
-    engine = create_engine(db_url, echo=False)
-    # Verification of connection
-    with engine.connect() as conn:
-        print("DEBUG: Database connection successful.")
-except Exception as e:
-    print(f"CRITICAL ERROR: Could not connect to database: {e}")
-    # In production, we want to see this error clearly in Render logs.
-    if os.getenv("RENDER"):
-        sys.exit(1)
+engine = create_engine(db_url, echo=False)
 
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 Base = declarative_base()

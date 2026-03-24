@@ -43,7 +43,7 @@ def on_startup():
         print(f"CRITICAL ERROR: Database initialization failed: {e}")
         # On Render, we want to fail fast so we can see the log
         if os.getenv("RENDER"):
-            os._exit(1)
+            print("WARNING: Database initialization failed, but continuing startup to allow port binding.")
 
     # 2. Load ML Model
     global model
@@ -352,29 +352,29 @@ def get_stats(
         except Exception:
             risk = False
         if risk: 
-            high_risk = int(high_risk + 1)
+            high_risk += 1
 
         dept_key, gender_key, role_key = str(e.department), str(e.gender), str(e.job_role)
         if dept_key not in dept_counts: dept_counts[dept_key] = 0
-        dept_counts[dept_key] = int(dept_counts[dept_key]) + 1
+        dept_counts[dept_key] += 1
         if gender_key not in gender_counts: gender_counts[gender_key] = 0
-        gender_counts[gender_key] = int(gender_counts[gender_key]) + 1
+        gender_counts[gender_key] += 1
         if role_key not in role_counts: role_counts[role_key] = 0
-        role_counts[role_key] = int(role_counts[role_key]) + 1
+        role_counts[role_key] += 1
 
-        if e.age <= 25:   age_groups["18-25"] = int(age_groups["18-25"]) + 1
-        elif e.age <= 35: age_groups["26-35"] = int(age_groups["26-35"]) + 1
-        elif e.age <= 45: age_groups["36-45"] = int(age_groups["36-45"]) + 1
-        elif e.age <= 55: age_groups["46-55"] = int(age_groups["46-55"]) + 1
-        else:             age_groups["56+"]   = int(age_groups["56+"]) + 1
+        if e.age <= 25:   age_groups["18-25"] += 1
+        elif e.age <= 35: age_groups["26-35"] += 1
+        elif e.age <= 45: age_groups["36-45"] += 1
+        elif e.age <= 55: age_groups["46-55"] += 1
+        else:             age_groups["56+"]   += 1
 
         sat_key = e.job_satisfaction if e.job_satisfaction in satisfaction_counts else 3
-        if risk: satisfaction_counts[sat_key]["High"] = int(satisfaction_counts[sat_key]["High"]) + 1
-        else:    satisfaction_counts[sat_key]["Low"]  = int(satisfaction_counts[sat_key]["Low"]) + 1
+        if risk: satisfaction_counts[sat_key]["High"] += 1
+        else:    satisfaction_counts[sat_key]["Low"]  += 1
 
         ot_key = "Yes" if e.overtime else "No"
-        if risk: overtime_risk[ot_key]["High Risk"] = int(overtime_risk[ot_key]["High Risk"]) + 1
-        else:    overtime_risk[ot_key]["Low Risk"]  = int(overtime_risk[ot_key]["Low Risk"]) + 1
+        if risk: overtime_risk[ot_key]["High Risk"] += 1
+        else:    overtime_risk[ot_key]["Low Risk"]  += 1
 
         scatter_data.append({"salary": e.salary, "tenure": e.years_at_company, "risk": 1 if risk else 0})
 
