@@ -56,7 +56,11 @@ app = FastAPI(title="Employee Attrition API", lifespan=lifespan)
 
 # Build allowed origins from env — wildcards + credentials is invalid in browsers
 _frontend_url = os.getenv("FRONTEND_URL", "").rstrip("/")
-_allowed_origins = ["http://localhost:5173", "http://127.0.0.1:5173"]
+_allowed_origins = [
+    "http://localhost:5173",
+    "http://127.0.0.1:5173",
+    "http://localhost:3000",
+]
 if _frontend_url:
     _allowed_origins.append(_frontend_url)
 
@@ -67,6 +71,24 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Ensure CORS headers are present even on unhandled 500 errors
+# (without this, the browser sees a CORS error instead of the real error)
+from fastapi import Request
+from fastapi.responses import JSONResponse
+
+@app.exception_handler(Exception)
+async def global_exception_handler(request: Request, exc: Exception):
+    origin = request.headers.get("origin", "")
+    headers = {}
+    if origin in _allowed_origins:
+        headers["Access-Control-Allow-Origin"] = origin
+        headers["Access-Control-Allow-Credentials"] = "true"
+    return JSONResponse(
+        status_code=500,
+        content={"detail": f"Internal server error: {str(exc)}"},
+        headers=headers,
+    )
 
 
 # ══════════════════════════════════════════════════════════════
