@@ -33,22 +33,24 @@ elif DATABASE_URL:
     # Ensure psycopg2 driver is specified
     if DATABASE_URL.startswith("postgresql://") and "+psycopg2" not in DATABASE_URL:
         DATABASE_URL = DATABASE_URL.replace("postgresql://", "postgresql+psycopg2://", 1)
-    print(f"DEBUG: Using DATABASE_URL from environment.")
+    print("DEBUG: Using DATABASE_URL from environment.")
 else:
-    raise RuntimeError("No database credentials found. Set DATABASE_URL or individual DB vars.")
+    # Don't crash at import time — server must start to bind the port.
+    # Routes that need DB will return 503 via get_db().
+    print("WARNING: No database credentials found. Set DATABASE_URL or individual DB vars.")
+    DATABASE_URL = None
 
-engine = create_engine(
-    DATABASE_URL,
-    echo=False,
-    pool_pre_ping=True,
-    connect_args={"connect_timeout": 10},
-)
+engine = create_engine(DATABASE_URL, echo=False, pool_pre_ping=True,
+                       connect_args={"connect_timeout": 10}) if DATABASE_URL else None
 
-SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine) if engine else None
 Base = declarative_base()
 
 
 def get_db():
+    if SessionLocal is None:
+        from fastapi import HTTPException
+        raise HTTPException(status_code=503, detail="Database not configured. Set DATABASE_URL on the server.")
     db = SessionLocal()
     try:
         yield db
