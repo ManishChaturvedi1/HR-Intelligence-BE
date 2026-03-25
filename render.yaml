@@ -1,0 +1,26 @@
+services:
+  - type: web
+    name: hr-intelligence-be
+    runtime: python
+    plan: free
+
+    # Render will use this to build the app
+    buildCommand: "pip install -r requirements.txt"
+
+    # Start the FastAPI app — Render injects $PORT automatically
+    startCommand: "uvicorn main:app --host 0.0.0.0 --port $PORT"
+
+    # Rootdir is the backend folder (if deploying from a sub-directory repo)
+    # If your Render service is pointed at the /backend folder directly, remove rootDir
+    # rootDir: backend
+
+    envVars:
+      # Set these in the Render dashboard — do NOT hardcode secrets here
+      - key: CLERK_SECRET_KEY
+        sync: false          # means "set manually in dashboard"
+      - key: DATABASE_URL
+        sync: false
+      - key: FRONTEND_URL
+        sync: false
+      - key: PYTHON_VERSION
+        value: "3.11.0"

@@ -49,7 +49,9 @@ engine = create_engine(
     DATABASE_URL,
     echo=False,
     pool_pre_ping=True,
-    connect_args={"connect_timeout": 10, "sslmode": "require"},
+    # sslmode is already embedded in DATABASE_URL — don't pass it again in
+    # connect_args or SQLAlchemy raises SAWarning: Duplicate query string key
+    connect_args={"connect_timeout": 10},
 ) if DATABASE_URL else None
 
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine) if engine else None
