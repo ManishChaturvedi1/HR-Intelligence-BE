@@ -7,55 +7,37 @@ import os
 # Load environment variables from .env
 load_dotenv()
 
-# ── Strategy 1: individual Supabase vars (local .env) ──────────────────────
-DB_USER     = os.getenv("user")
-DB_PASSWORD = os.getenv("password")
-DB_HOST     = os.getenv("host")
-DB_PORT     = os.getenv("port", "6543")
-DB_NAME     = os.getenv("dbname")
+# ── Build connection from individual env vars (Supabase recommended) ────────
+DB_USER     = os.getenv("DB_USER")
+DB_PASSWORD = os.getenv("DB_PASSWORD")
+DB_HOST     = os.getenv("DB_HOST")
+DB_PORT     = os.getenv("DB_PORT", "5432")
+DB_NAME     = os.getenv("DB_NAME", "postgres")
 
-# ── Strategy 2: DATABASE_URL (Render / other hosting) ──────────────────────
+# Fallback: DATABASE_URL (if individual vars not set)
 DATABASE_URL = (os.getenv("DATABASE_URL") or "").strip() or None
 
-# DEBUG: Show which env vars are detected (mask passwords)
-print(f"DEBUG [db]: DB_USER={DB_USER!r}, DB_HOST={DB_HOST!r}, DB_NAME={DB_NAME!r}, DB_PASSWORD={'SET' if DB_PASSWORD else 'NOT SET'}")
-if DATABASE_URL:
-    # Show URL with password masked
-    _masked = DATABASE_URL
-    try:
-        _at = _masked.index("@")
-        _colon = _masked.index(":", _masked.index("//") + 2)
-        _masked = _masked[:_colon+1] + "****" + _masked[_at:]
-    except ValueError:
-        pass
-    print(f"DEBUG [db]: DATABASE_URL = {_masked}")
-else:
-    print("DEBUG [db]: DATABASE_URL = NOT SET")
-
-if DB_USER and DB_PASSWORD and DB_HOST and DB_NAME:
-    # URL-encode credentials so special chars like @, %, # don't break the URL
+if DB_USER and DB_PASSWORD and DB_HOST:
+    # URL-encode credentials so special chars don't break the URL
     _user     = urllib.parse.quote_plus(DB_USER)
     _password = urllib.parse.quote_plus(DB_PASSWORD)
     DATABASE_URL = (
         f"postgresql+psycopg2://{_user}:{_password}"
         f"@{DB_HOST}:{DB_PORT}/{DB_NAME}?sslmode=require"
     )
-    print(f"DEBUG [db]: *** Using STRATEGY 1 (individual vars) → {DB_HOST}:{DB_PORT}/{DB_NAME}")
+    print(f"DEBUG [db]: Using individual vars → {DB_USER}@{DB_HOST}:{DB_PORT}/{DB_NAME}")
 
 elif DATABASE_URL:
-    # Fix Render's legacy 'postgres://' prefix
     if DATABASE_URL.startswith("postgres://"):
         DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql://", 1)
-    # Ensure psycopg2 driver is specified
     if DATABASE_URL.startswith("postgresql://") and "+psycopg2" not in DATABASE_URL:
         DATABASE_URL = DATABASE_URL.replace("postgresql://", "postgresql+psycopg2://", 1)
-    # Supabase requires SSL — add if missing
     if "sslmode" not in DATABASE_URL:
         DATABASE_URL += "?sslmode=require" if "?" not in DATABASE_URL else "&sslmode=require"
-    print("DEBUG [db]: *** Using STRATEGY 2 (DATABASE_URL)")
+    print("DEBUG [db]: Using DATABASE_URL from environment.")
 
 else:
-    print("WARNING [db]: No database credentials found. Set DATABASE_URL on the server.")
+    print("WARNING [db]: No database credentials found.")
     DATABASE_URL = None
 
 engine = create_engine(
@@ -72,7 +54,7 @@ Base = declarative_base()
 def get_db():
     if SessionLocal is None:
         from fastapi import HTTPException
-        raise HTTPException(status_code=503, detail="Database not configured. Set DATABASE_URL on the server.")
+        raise HTTPException(status_code=503, detail="Database not configured.")
     db = SessionLocal()
     try:
         yield db
