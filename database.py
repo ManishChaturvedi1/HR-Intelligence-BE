@@ -15,7 +15,7 @@ DB_PORT     = os.getenv("port", "6543")
 DB_NAME     = os.getenv("dbname")
 
 # ── Strategy 2: DATABASE_URL (Render / other hosting) ──────────────────────
-DATABASE_URL = os.getenv("DATABASE_URL")
+DATABASE_URL = (os.getenv("DATABASE_URL") or "").strip() or None
 
 if DB_USER and DB_PASSWORD and DB_HOST and DB_NAME:
     # URL-encode credentials so special chars like @, %, # don't break the URL
