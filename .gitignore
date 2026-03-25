@@ -25,9 +25,6 @@ build/
 # Logs
 *.log
 
-# ML artifacts (large binary — stored in repo root or external storage)
-*.pkl
-
 # OS
 .DS_Store
 Thumbs.db
