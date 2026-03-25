@@ -17,6 +17,21 @@ DB_NAME     = os.getenv("dbname")
 # ── Strategy 2: DATABASE_URL (Render / other hosting) ──────────────────────
 DATABASE_URL = (os.getenv("DATABASE_URL") or "").strip() or None
 
+# DEBUG: Show which env vars are detected (mask passwords)
+print(f"DEBUG [db]: DB_USER={DB_USER!r}, DB_HOST={DB_HOST!r}, DB_NAME={DB_NAME!r}, DB_PASSWORD={'SET' if DB_PASSWORD else 'NOT SET'}")
+if DATABASE_URL:
+    # Show URL with password masked
+    _masked = DATABASE_URL
+    try:
+        _at = _masked.index("@")
+        _colon = _masked.index(":", _masked.index("//") + 2)
+        _masked = _masked[:_colon+1] + "****" + _masked[_at:]
+    except ValueError:
+        pass
+    print(f"DEBUG [db]: DATABASE_URL = {_masked}")
+else:
+    print("DEBUG [db]: DATABASE_URL = NOT SET")
+
 if DB_USER and DB_PASSWORD and DB_HOST and DB_NAME:
     # URL-encode credentials so special chars like @, %, # don't break the URL
     _user     = urllib.parse.quote_plus(DB_USER)
@@ -25,7 +40,7 @@ if DB_USER and DB_PASSWORD and DB_HOST and DB_NAME:
         f"postgresql+psycopg2://{_user}:{_password}"
         f"@{DB_HOST}:{DB_PORT}/{DB_NAME}?sslmode=require"
     )
-    print(f"DEBUG: Using individual env vars → {DB_HOST}:{DB_PORT}/{DB_NAME}")
+    print(f"DEBUG [db]: *** Using STRATEGY 1 (individual vars) → {DB_HOST}:{DB_PORT}/{DB_NAME}")
 
 elif DATABASE_URL:
     # Fix Render's legacy 'postgres://' prefix
@@ -37,20 +52,16 @@ elif DATABASE_URL:
     # Supabase requires SSL — add if missing
     if "sslmode" not in DATABASE_URL:
         DATABASE_URL += "?sslmode=require" if "?" not in DATABASE_URL else "&sslmode=require"
-    print("DEBUG: Using DATABASE_URL from environment.")
+    print("DEBUG [db]: *** Using STRATEGY 2 (DATABASE_URL)")
 
 else:
-    # Don't crash at import time — server must start to bind the port.
-    # Routes that need DB will return 503 via get_db().
-    print("WARNING: No database credentials found. Set DATABASE_URL or individual DB vars.")
+    print("WARNING [db]: No database credentials found. Set DATABASE_URL on the server.")
     DATABASE_URL = None
 
 engine = create_engine(
     DATABASE_URL,
     echo=False,
     pool_pre_ping=True,
-    # sslmode is already embedded in DATABASE_URL — don't pass it again in
-    # connect_args or SQLAlchemy raises SAWarning: Duplicate query string key
     connect_args={"connect_timeout": 10},
 ) if DATABASE_URL else None
 
