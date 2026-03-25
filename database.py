@@ -26,6 +26,7 @@ if DB_USER and DB_PASSWORD and DB_HOST and DB_NAME:
         f"@{DB_HOST}:{DB_PORT}/{DB_NAME}?sslmode=require"
     )
     print(f"DEBUG: Using individual env vars → {DB_HOST}:{DB_PORT}/{DB_NAME}")
+
 elif DATABASE_URL:
     # Fix Render's legacy 'postgres://' prefix
     if DATABASE_URL.startswith("postgres://"):
@@ -33,15 +34,23 @@ elif DATABASE_URL:
     # Ensure psycopg2 driver is specified
     if DATABASE_URL.startswith("postgresql://") and "+psycopg2" not in DATABASE_URL:
         DATABASE_URL = DATABASE_URL.replace("postgresql://", "postgresql+psycopg2://", 1)
+    # Supabase requires SSL — add if missing
+    if "sslmode" not in DATABASE_URL:
+        DATABASE_URL += "?sslmode=require" if "?" not in DATABASE_URL else "&sslmode=require"
     print("DEBUG: Using DATABASE_URL from environment.")
+
 else:
     # Don't crash at import time — server must start to bind the port.
     # Routes that need DB will return 503 via get_db().
     print("WARNING: No database credentials found. Set DATABASE_URL or individual DB vars.")
     DATABASE_URL = None
 
-engine = create_engine(DATABASE_URL, echo=False, pool_pre_ping=True,
-                       connect_args={"connect_timeout": 10}) if DATABASE_URL else None
+engine = create_engine(
+    DATABASE_URL,
+    echo=False,
+    pool_pre_ping=True,
+    connect_args={"connect_timeout": 10, "sslmode": "require"},
+) if DATABASE_URL else None
 
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine) if engine else None
 Base = declarative_base()
