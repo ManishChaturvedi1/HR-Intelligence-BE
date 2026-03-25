@@ -52,6 +52,7 @@ async def lifespan(app: FastAPI):
     # ── SHUTDOWN ── (nothing to do)
 
 # ── App setup ─────────────────────────────────────────────────
+import traceback
 app = FastAPI(title="Employee Attrition API", lifespan=lifespan)
 
 # Build allowed origins from env — wildcards + credentials is invalid in browsers
@@ -60,9 +61,14 @@ _allowed_origins = [
     "http://localhost:5173",
     "http://127.0.0.1:5173",
     "http://localhost:3000",
+    # Hardcode the production URL as a safety net so CORS always works
+    # even if FRONTEND_URL env var is missing on Render
+    "https://hr-intelligence.netlify.app",
 ]
-if _frontend_url:
+if _frontend_url and _frontend_url not in _allowed_origins:
     _allowed_origins.append(_frontend_url)
+
+print(f"DEBUG [cors]: Allowed origins = {_allowed_origins}")
 
 app.add_middleware(
     CORSMiddleware,
@@ -79,6 +85,11 @@ from fastapi.responses import JSONResponse
 
 @app.exception_handler(Exception)
 async def global_exception_handler(request: Request, exc: Exception):
+    # Log full traceback so Render logs show exactly what crashed
+    print(f"ERROR [500]: {request.method} {request.url}")
+    print(f"ERROR [500]: {type(exc).__name__}: {exc}")
+    traceback.print_exc()
+
     origin = request.headers.get("origin", "")
     headers = {}
     if origin in _allowed_origins:
@@ -86,7 +97,7 @@ async def global_exception_handler(request: Request, exc: Exception):
         headers["Access-Control-Allow-Credentials"] = "true"
     return JSONResponse(
         status_code=500,
-        content={"detail": f"Internal server error: {str(exc)}"},
+        content={"detail": f"Internal server error: {type(exc).__name__}: {str(exc)}"},
         headers=headers,
     )
 
@@ -98,6 +109,30 @@ async def global_exception_handler(request: Request, exc: Exception):
 @app.get("/")
 def root():
     return {"message": "Employee Attrition API"}
+
+
+@app.get("/health")
+def health_check():
+    """Public endpoint to verify DB connectivity — no auth needed."""
+    from database import engine
+    from sqlalchemy import text
+    result = {"api": "ok", "database": "unknown", "model": "unknown"}
+    # Test DB
+    if engine is None:
+        result["database"] = "NOT CONFIGURED — DATABASE_URL missing"
+    else:
+        try:
+            with engine.connect() as conn:
+                conn.execute(text("SELECT 1"))
+            result["database"] = "ok"
+        except Exception as e:
+            result["database"] = f"FAILED: {type(e).__name__}: {str(e)}"
+    # Test model
+    result["model"] = "loaded" if model is not None else "NOT LOADED — model.pkl missing"
+    # Env check
+    result["clerk_key_set"] = bool(os.getenv("CLERK_SECRET_KEY"))
+    result["frontend_url"] = os.getenv("FRONTEND_URL", "NOT SET")
+    return result
 
 
 import json
